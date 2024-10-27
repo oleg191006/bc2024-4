@@ -1,7 +1,11 @@
-const http = require('http');
+
 const fs = require('fs').promises;
 const path = require('path');
+
+
+const http = require('http');
 const { program } = require('commander');
+const superagent = require('superagent');
 
 program
     .requiredOption('-h, --host <host>', 'Адреса сервера')
@@ -13,24 +17,36 @@ const options = program.opts();
 
 const server = http.createServer(async (req, res) => {
     const urlParts = req.url.split('/');
-    const httpCode = urlParts[1];
+    const httpCode = urlParts[1]; // Отримуємо HTTP код зі шляху
     const imagePath = path.join(options.cache, `${httpCode}.jpg`);
 
     switch (req.method) {
         case 'GET':
             try {
-                const image = await fs.readFile(imagePath); // Спроба прочитати картинку з кешу
+                const image = await fs.readFile(imagePath);
                 res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-                res.end(image); // Відправляємо картинку, якщо знайдена
+                res.end(image);
             } catch (error) {
-                // Якщо картинки немає, повертаємо 404
-                res.writeHead(404, { 'Content-Type': 'text/plain' });
-                res.end('Image not found');
+
+                try {
+                    const response = await superagent.get(`https://http.cat/${httpCode}`);
+                    const image = response.body;
+
+                    await fs.writeFile(imagePath, image);
+
+                    res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+                    res.end(image);
+                } catch (err) {
+
+                    res.writeHead(404, { 'Content-Type': 'text/plain' });
+                    res.end('Not found');
+                }
             }
             break;
 
         case 'PUT':
             try {
+
                 const data = await new Promise((resolve, reject) => {
                     const chunks = [];
                     req.on('data', chunk => chunks.push(chunk));
@@ -39,13 +55,20 @@ const server = http.createServer(async (req, res) => {
                 });
 
                 if (data.length > 0) {
-                    // Зберігаємо картинку у кеш
+
                     await fs.writeFile(imagePath, data);
                     res.writeHead(201, { 'Content-Type': 'text/plain' });
                     res.end('Image saved');
                 } else {
-                    res.writeHead(400, { 'Content-Type': 'text/plain' });
-                    res.end('No data provided');
+
+                    const response = await superagent.get(`https://http.cat/${httpCode}`);
+                    const image = response.body;
+
+
+                    await fs.writeFile(imagePath, image);
+
+                    res.writeHead(201, { 'Content-Type': 'image/jpeg' });
+                    res.end(image);
                 }
             } catch (error) {
                 console.error('Error saving image:', error);
@@ -75,4 +98,3 @@ const server = http.createServer(async (req, res) => {
 server.listen(options.port, options.host, () => {
     console.log(`Server running at http://${options.host}:${options.port}/`);
 });
-
